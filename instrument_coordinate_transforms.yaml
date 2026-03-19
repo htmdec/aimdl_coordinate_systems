@@ -1,0 +1,28 @@
+canonical_system:
+  origin: bottom-right
+  x_positive: left
+  y_positive: up
+  units: mm
+  sample_width: 40.0
+  sample_height: 40.0
+
+instruments:
+  - name: instrument_a
+    units: mm
+    calibration_points:
+      - instrument: [0, 0]
+        sample: [0, 25]
+      - instrument: [25, 0]
+        sample: [25, 25]
+      - instrument: [0, 25]
+        sample: [0, 0]
+
+  - name: instrument_b
+    units: microns
+    calibration_points:
+      - instrument: [0, 0]
+        sample: [25, 0]
+      - instrument: [0, 25000]
+        sample: [25, 25]
+      - instrument: [25000, 0]
+        sample: [0, 0]
