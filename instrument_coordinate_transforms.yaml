@@ -7,22 +7,32 @@ canonical_system:
   sample_height: 40.0
 
 instruments:
-  - name: instrument_a
+  - name: MAXIMA
     units: mm
     calibration_points:
-      - instrument: [0, 0]
-        sample: [0, 25]
-      - instrument: [25, 0]
-        sample: [25, 25]
-      - instrument: [0, 25]
+      - instrument: [-14, -20]
         sample: [0, 0]
+      - instrument: [26, -20]
+        sample: [40, 0]
+      - instrument: [-14, 20]
+        sample: [0, 40]
 
-  - name: instrument_b
-    units: microns
+  - name: HELIX
+    units: mm
     calibration_points:
-      - instrument: [0, 0]
-        sample: [25, 0]
-      - instrument: [0, 25000]
-        sample: [25, 25]
-      - instrument: [25000, 0]
+      - instrument: [8, 8]
+        sample: [32, 8]
+      - instrument: [32, 32]
+        sample: [14, 32]
+      - instrument: [8, 32]
+        sample: [32, 32]
+
+  - name: SPHINX
+    units: mm
+    calibration_points:
+      - instrument: [125.319, 148.213]
         sample: [0, 0]
+      - instrument: [124.924, 107.753]
+        sample: [0, 40]
+      - instrument: [165.189, 107.350]
+        sample: [40, 40]        
