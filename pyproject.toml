@@ -2,7 +2,7 @@
 name = "coordinate-transformer"
 version = "0.1.0"
 description = "Config-driven affine coordinate transforms for lab instruments"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
   "numpy>=1.26",
   "PyYAML>=6.0",

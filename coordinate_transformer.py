@@ -3,13 +3,13 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, Union
 
 import numpy as np
 import yaml
 
 
-ArrayLike2D = Sequence[float] | np.ndarray
+ArrayLike2D = Union[Sequence[float], np.ndarray]
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class InstrumentTransform:
         return float(out[0]), float(out[1])
 
     def transform_points(self, points: Iterable[ArrayLike2D]) -> np.ndarray:
-        arr = np.asarray(list(points), dtype=float)
+        arr = np.asarray(points, dtype=float)
         if arr.ndim != 2 or arr.shape[1] != 2:
             raise ValueError("points must be an iterable of [x, y] pairs")
         ones = np.ones((arr.shape[0], 1), dtype=float)
@@ -42,7 +42,7 @@ class InstrumentTransform:
         return out[:, :2]
 
     def inverse_transform_points(self, points: Iterable[ArrayLike2D]) -> np.ndarray:
-        arr = np.asarray(list(points), dtype=float)
+        arr = np.asarray(points, dtype=float)
         if arr.ndim != 2 or arr.shape[1] != 2:
             raise ValueError("points must be an iterable of [x, y] pairs")
         ones = np.ones((arr.shape[0], 1), dtype=float)
@@ -86,6 +86,13 @@ class CoordinateTransformer:
             calibration_points = instrument.get("calibration_points", [])
             matrix = self._fit_affine_matrix(calibration_points)
             inverse_matrix = np.linalg.inv(matrix)
+            cond = np.linalg.cond(matrix[:2, :2])
+            if cond > 1e10:
+                raise ValueError(
+                    f"Calibration for '{name}' produces a near-singular affine matrix "
+                    f"(condition number: {cond:.2e}). Check that calibration points are "
+                    f"not nearly collinear."
+                )
             stored_points = tuple(
                 {
                     "instrument": tuple(map(float, point["instrument"])),

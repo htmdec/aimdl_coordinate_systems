@@ -1,0 +1,41 @@
+version: 2.1
+
+jobs:
+  test:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            python -m pip install --upgrade pip
+            python -m pip install -e ".[test]"
+      - run:
+          name: Run linter
+          command: ruff check .
+      - run:
+          name: Run tests
+          command: pytest --junitxml=test-results/results.xml --cov=coordinate_transformer --cov-report=term-missing
+      - store_test_results:
+          path: test-results
+
+  test-min-python:
+    docker:
+      - image: cimg/python:3.10
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            python -m pip install --upgrade pip
+            python -m pip install -e ".[test]"
+      - run:
+          name: Run tests
+          command: pytest
+
+workflows:
+  ci:
+    jobs:
+      - test
+      - test-min-python
