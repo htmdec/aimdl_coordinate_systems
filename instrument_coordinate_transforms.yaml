@@ -23,9 +23,9 @@ instruments:
       - instrument: [8, 8]
         sample: [32, 8]
       - instrument: [32, 32]
-        sample: [14, 32]
-      - instrument: [8, 32]
-        sample: [32, 32]
+        sample: [8, 32]
+      - instrument: [32, 8]
+        sample: [8, 8]
 
   - name: SPHINX
     units: mm
