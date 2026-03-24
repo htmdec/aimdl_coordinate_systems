@@ -88,16 +88,23 @@ def yaml_path(tmp_path):
 
 @pytest.fixture
 def real_yaml_path():
-    return Path(__file__).resolve().parent.parent / "instrument_coordinate_transforms.yaml"
+    return (
+        Path(__file__).resolve().parent.parent / "instrument_coordinate_transforms.yaml"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Construction and loading
 # ---------------------------------------------------------------------------
 
+
 class TestConstruction:
     def test_from_dict(self, simple_transformer):
-        assert set(simple_transformer.instruments()) == {"IDENTITY", "SCALE2X", "TRANSLATE"}
+        assert set(simple_transformer.instruments()) == {
+            "IDENTITY",
+            "SCALE2X",
+            "TRANSLATE",
+        }
 
     def test_from_yaml(self, yaml_path):
         t = CoordinateTransformer.from_yaml(yaml_path)
@@ -155,6 +162,7 @@ class TestConstruction:
 # Identity transform
 # ---------------------------------------------------------------------------
 
+
 class TestIdentityTransform:
     def test_forward(self, simple_transformer):
         x, y = simple_transformer.transform("IDENTITY", 5.0, 7.0)
@@ -174,6 +182,7 @@ class TestIdentityTransform:
 # ---------------------------------------------------------------------------
 # Translation transform
 # ---------------------------------------------------------------------------
+
 
 class TestTranslationTransform:
     def test_forward(self, simple_transformer):
@@ -196,6 +205,7 @@ class TestTranslationTransform:
 # Scale transform
 # ---------------------------------------------------------------------------
 
+
 class TestScaleTransform:
     def test_forward(self, simple_transformer):
         x, y = simple_transformer.transform("SCALE2X", 3.0, 5.0)
@@ -211,6 +221,7 @@ class TestScaleTransform:
 # ---------------------------------------------------------------------------
 # Rotation transform
 # ---------------------------------------------------------------------------
+
 
 class TestRotationTransform:
     def test_90_degree_rotation(self):
@@ -230,19 +241,24 @@ class TestRotationTransform:
 # Round-trip consistency
 # ---------------------------------------------------------------------------
 
+
 class TestRoundTrip:
     @pytest.mark.parametrize("instrument", ["IDENTITY", "TRANSLATE", "SCALE2X"])
     def test_forward_inverse_roundtrip(self, simple_transformer, instrument):
         x_orig, y_orig = 7.3, -2.1
         x_sample, y_sample = simple_transformer.transform(instrument, x_orig, y_orig)
-        x_back, y_back = simple_transformer.inverse_transform(instrument, x_sample, y_sample)
+        x_back, y_back = simple_transformer.inverse_transform(
+            instrument, x_sample, y_sample
+        )
         assert x_back == pytest.approx(x_orig, abs=1e-10)
         assert y_back == pytest.approx(y_orig, abs=1e-10)
 
     @pytest.mark.parametrize("instrument", ["IDENTITY", "TRANSLATE", "SCALE2X"])
     def test_inverse_forward_roundtrip(self, simple_transformer, instrument):
         x_orig, y_orig = 15.0, 25.0
-        x_inst, y_inst = simple_transformer.inverse_transform(instrument, x_orig, y_orig)
+        x_inst, y_inst = simple_transformer.inverse_transform(
+            instrument, x_orig, y_orig
+        )
         x_back, y_back = simple_transformer.transform(instrument, x_inst, y_inst)
         assert x_back == pytest.approx(x_orig, abs=1e-10)
         assert y_back == pytest.approx(y_orig, abs=1e-10)
@@ -251,6 +267,7 @@ class TestRoundTrip:
 # ---------------------------------------------------------------------------
 # Batch transform
 # ---------------------------------------------------------------------------
+
 
 class TestBatchTransform:
     def test_batch_matches_single(self, simple_transformer):
@@ -278,11 +295,14 @@ class TestBatchTransform:
 # Calibration validation
 # ---------------------------------------------------------------------------
 
+
 class TestValidation:
     def test_exact_calibration_has_zero_residual(self, simple_transformer):
         errors = simple_transformer.validate()
         for name, err in errors.items():
-            assert err == pytest.approx(0.0, abs=1e-12), f"{name} has nonzero calibration error"
+            assert err == pytest.approx(
+                0.0, abs=1e-12
+            ), f"{name} has nonzero calibration error"
 
     def test_calibration_residuals_shape(self, simple_transformer):
         t = simple_transformer.get_transform("TRANSLATE")
@@ -300,6 +320,7 @@ class TestValidation:
 # Summary
 # ---------------------------------------------------------------------------
 
+
 class TestSummary:
     def test_summary_structure(self, simple_transformer):
         s = simple_transformer.summary()
@@ -315,6 +336,7 @@ class TestSummary:
 # ---------------------------------------------------------------------------
 # Real instrument data
 # ---------------------------------------------------------------------------
+
 
 class TestRealInstruments:
     """Tests against the actual calibration YAML shipped with the repo."""
@@ -354,10 +376,18 @@ class TestRealInstruments:
 # CLI
 # ---------------------------------------------------------------------------
 
+
 class TestCLI:
     def test_forward_transform_cli(self, real_yaml_path):
         result = subprocess_run(
-            ["python", "coordinate_transformer.py", str(real_yaml_path), "MAXIMA", "-14", "-20"],
+            [
+                "python",
+                "coordinate_transformer.py",
+                str(real_yaml_path),
+                "MAXIMA",
+                "-14",
+                "-20",
+            ],
             capture_output=True,
             text=True,
             cwd=real_yaml_path.parent,
@@ -368,7 +398,15 @@ class TestCLI:
 
     def test_inverse_transform_cli(self, real_yaml_path):
         result = subprocess_run(
-            ["python", "coordinate_transformer.py", str(real_yaml_path), "MAXIMA", "0", "0", "--inverse"],
+            [
+                "python",
+                "coordinate_transformer.py",
+                str(real_yaml_path),
+                "MAXIMA",
+                "0",
+                "0",
+                "--inverse",
+            ],
             capture_output=True,
             text=True,
             cwd=real_yaml_path.parent,
@@ -379,7 +417,15 @@ class TestCLI:
 
     def test_show_matrix_cli(self, real_yaml_path):
         result = subprocess_run(
-            ["python", "coordinate_transformer.py", str(real_yaml_path), "HELIX", "8", "8", "--show-matrix"],
+            [
+                "python",
+                "coordinate_transformer.py",
+                str(real_yaml_path),
+                "HELIX",
+                "8",
+                "8",
+                "--show-matrix",
+            ],
             capture_output=True,
             text=True,
             cwd=real_yaml_path.parent,
