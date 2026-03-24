@@ -12,7 +12,7 @@ The current configuration includes these instruments:
 
 ## Repository contents
 
-- `coordinate_transformer.py` is a standalone module with the `CoordinateTransformer` class and a small CLI
+- `src/coordinate_transformer/` is the package with the `CoordinateTransformer` class and a small CLI
 - `instrument_coordinate_transforms.yaml` is the calibration data config based on the canonical sample coordinate system
 - `coordinate_transform_example.ipynb` is a simple example notebook showing the transformer in action
 - `pyproject.toml` has project metadata and dependencies for running the notebook
@@ -28,7 +28,7 @@ The module fits a 2D affine transform from instrument coordinates to sample coor
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.9+
 
 Dependencies are defined in `pyproject.toml`:
 
@@ -187,19 +187,19 @@ The module also includes a small CLI.
 ### Transform an instrument point into sample coordinates
 
 ```bash
-python coordinate_transformer.py instrument_coordinate_transforms.yaml MAXIMA -14 -20
+python -m coordinate_transformer instrument_coordinate_transforms.yaml MAXIMA -14 -20
 ```
 
 ### Inverse transform from sample coordinates into instrument coordinates
 
 ```bash
-python coordinate_transformer.py instrument_coordinate_transforms.yaml SPHINX 40 40 --inverse
+python -m coordinate_transformer instrument_coordinate_transforms.yaml SPHINX 40 40 --inverse
 ```
 
 ### Show the fitted affine matrix
 
 ```bash
-python coordinate_transformer.py instrument_coordinate_transforms.yaml HELIX 8 8 --show-matrix
+python -m coordinate_transformer instrument_coordinate_transforms.yaml HELIX 8 8 --show-matrix
 ```
 
 ## Running the example notebook

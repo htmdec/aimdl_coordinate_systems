@@ -357,10 +357,9 @@ class TestRealInstruments:
 class TestCLI:
     def test_forward_transform_cli(self, real_yaml_path):
         result = subprocess_run(
-            ["python", "coordinate_transformer.py", str(real_yaml_path), "MAXIMA", "-14", "-20"],
+            ["python", "-m", "coordinate_transformer", str(real_yaml_path), "MAXIMA", "-14", "-20"],
             capture_output=True,
             text=True,
-            cwd=real_yaml_path.parent,
         )
         assert result.returncode == 0
         assert "sample" in result.stdout
@@ -368,10 +367,9 @@ class TestCLI:
 
     def test_inverse_transform_cli(self, real_yaml_path):
         result = subprocess_run(
-            ["python", "coordinate_transformer.py", str(real_yaml_path), "MAXIMA", "0", "0", "--inverse"],
+            ["python", "-m", "coordinate_transformer", str(real_yaml_path), "MAXIMA", "0", "0", "--inverse"],
             capture_output=True,
             text=True,
-            cwd=real_yaml_path.parent,
         )
         assert result.returncode == 0
         assert "MAXIMA" in result.stdout
@@ -379,10 +377,9 @@ class TestCLI:
 
     def test_show_matrix_cli(self, real_yaml_path):
         result = subprocess_run(
-            ["python", "coordinate_transformer.py", str(real_yaml_path), "HELIX", "8", "8", "--show-matrix"],
+            ["python", "-m", "coordinate_transformer", str(real_yaml_path), "HELIX", "8", "8", "--show-matrix"],
             capture_output=True,
             text=True,
-            cwd=real_yaml_path.parent,
         )
         assert result.returncode == 0
         assert "Affine matrix" in result.stdout

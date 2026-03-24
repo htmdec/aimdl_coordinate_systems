@@ -23,8 +23,11 @@ test = [
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-py-modules = ["coordinate_transformer"]
+[project.scripts]
+coordinate-transformer = "coordinate_transformer:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
