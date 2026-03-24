@@ -15,7 +15,11 @@ The current configuration includes these instruments:
 - `src/coordinate_transformer/` is the package with the `CoordinateTransformer` class and a small CLI
 - `instrument_coordinate_transforms.yaml` is the calibration data config based on the canonical sample coordinate system
 - `coordinate_transform_example.ipynb` is a simple example notebook showing the transformer in action
-- `pyproject.toml` has project metadata and dependencies for running the notebook
+- `tests/` is the test suite (40 tests covering transforms, validation, batch operations, and the CLI)
+- `pyproject.toml` has project metadata, build configuration, and dependency groups
+- `.circleci/` contains the CircleCI pipeline configuration for continuous integration
+- `.github/workflows/` contains the GitHub Actions workflow for publishing to PyPI on tagged releases
+- `LICENSE` is the MIT license
 
 ## How it works
 
@@ -30,34 +34,60 @@ The module fits a 2D affine transform from instrument coordinates to sample coor
 
 - Python 3.9+
 
-Dependencies are defined in `pyproject.toml`:
+Core dependencies (installed automatically):
 
 - `numpy`
 - `PyYAML`
-- `jupyter`
-- `ipykernel`
+
+Optional extras:
+
+- `pip install coordinate-transformer[notebook]` adds `jupyter` and `ipykernel` for running the example notebook
+- `pip install coordinate-transformer[test]` adds `pytest`, `pytest-cov`, and `ruff` for testing and linting
 
 ## Installation
 
-Create and activate a virtual environment, then install the project.
+### From PyPI
 
-### macOS / Linux
+```bash
+pip install coordinate-transformer
+```
+
+### Development installation
+
+Clone the repository, create a virtual environment, and install in editable mode with test dependencies:
+
+#### macOS / Linux
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e .
+pip install -e ".[test]"
 ```
 
-### Windows PowerShell
+#### Windows PowerShell
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e .
+pip install -e ".[test]"
 ```
+
+## Running tests
+
+```bash
+pip install -e ".[test]"
+pytest
+```
+
+Linting is available via:
+
+```bash
+ruff check .
+```
+
+CI runs automatically on CircleCI (for every push) and GitHub Actions (for tagged releases).
 
 ## YAML configuration
 
@@ -202,6 +232,14 @@ python -m coordinate_transformer instrument_coordinate_transforms.yaml SPHINX 40
 python -m coordinate_transformer instrument_coordinate_transforms.yaml HELIX 8 8 --show-matrix
 ```
 
+### Using the console script
+
+After installation, `coordinate-transformer` is also available as a standalone command:
+
+```bash
+coordinate-transformer instrument_coordinate_transforms.yaml MAXIMA -14 -20
+```
+
 ## Running the example notebook
 
 After installing the environment:
@@ -228,6 +266,14 @@ python -m ipykernel install --user --name coordinate-transformer --display-name 
 ```
 
 Then choose that kernel in Jupyter.
+
+## Versioning and releases
+
+The version is derived automatically from git tags using [setuptools-scm](https://github.com/pypa/setuptools-scm). To release a new version:
+
+1. Tag the commit with a `v` prefix (e.g., `git tag v0.2.0`)
+2. Push the tag: `git push origin --tags`
+3. The GitHub Actions workflow will publish to PyPI automatically
 
 ## Notes
 
