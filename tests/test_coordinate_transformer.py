@@ -20,8 +20,8 @@ from coordinate_transformer import CoordinateTransformer, InstrumentTransform
 
 SIMPLE_CONFIG = {
     "canonical_system": {
-        "origin": "bottom-right",
-        "x_positive": "left",
+        "origin": "bottom-left",
+        "x_positive": "right",
         "y_positive": "up",
         "units": "mm",
         "sample_width": 40.0,
