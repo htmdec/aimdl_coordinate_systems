@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import yaml
 
-AArrayLike2D = Sequence[float] | np.ndarray
+ArrayLike2D = Sequence[float] | np.ndarray
 
 
 @dataclass(frozen=True)
