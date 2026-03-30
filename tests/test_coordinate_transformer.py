@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import textwrap
 from pathlib import Path
 from subprocess import run as subprocess_run
 
@@ -11,8 +9,7 @@ import numpy as np
 import pytest
 import yaml
 
-from coordinate_transformer import CoordinateTransformer, InstrumentTransform
-
+from coordinate_transformer import CoordinateTransformer
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -306,7 +303,7 @@ class TestSummary:
         assert "canonical_system" in s
         assert "instruments" in s
         assert set(s["instruments"].keys()) == {"IDENTITY", "SCALE2X", "TRANSLATE"}
-        for name, info in s["instruments"].items():
+        for _name, info in s["instruments"].items():
             assert "units" in info
             assert "matrix" in info
             assert "max_calibration_error" in info

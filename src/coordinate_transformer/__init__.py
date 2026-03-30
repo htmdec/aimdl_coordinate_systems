@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence, Union
+from typing import Any, Union
 
 import numpy as np
 import yaml
-
 
 ArrayLike2D = Union[Sequence[float], np.ndarray]
 
@@ -109,7 +109,7 @@ class CoordinateTransformer:
             )
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "CoordinateTransformer":
+    def from_yaml(cls, path: str | Path) -> CoordinateTransformer:
         path = Path(path)
         with path.open("r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
