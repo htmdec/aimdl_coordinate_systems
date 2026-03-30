@@ -1,6 +1,6 @@
 # Coordinate Transformer
 
-Config-driven affine coordinate transforms for lab instruments.
+Config-driven affine coordinate transforms for lab instruments. (updated to v0.2.1 for PyPI)
 
 This repository provides a small Python module that reads instrument calibration data from `instrument_coordinate_transforms.yaml`, fits a 2D affine transform for each instrument, and converts `(x, y)` points between an instrument coordinate system and a canonical sample coordinate system.
 
