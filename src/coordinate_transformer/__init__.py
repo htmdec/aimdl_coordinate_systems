@@ -4,12 +4,12 @@ import argparse
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import numpy as np
 import yaml
 
-ArrayLike2D = Union[Sequence[float], np.ndarray]
+AArrayLike2D = Sequence[float] | np.ndarray
 
 
 @dataclass(frozen=True)
@@ -51,8 +51,12 @@ class InstrumentTransform:
         return out[:, :2]
 
     def calibration_residuals(self) -> np.ndarray:
-        instrument_points = np.asarray([p["instrument"] for p in self.calibration_points], dtype=float)
-        sample_points = np.asarray([p["sample"] for p in self.calibration_points], dtype=float)
+        instrument_points = np.asarray(
+            [p["instrument"] for p in self.calibration_points], dtype=float
+        )
+        sample_points = np.asarray(
+            [p["sample"] for p in self.calibration_points], dtype=float
+        )
         predicted = self.transform_points(instrument_points)
         return predicted - sample_points
 
@@ -82,7 +86,9 @@ class CoordinateTransformer:
 
         for instrument in instruments:
             name = instrument["name"]
-            units = instrument.get("units", self.canonical_system.get("units", "unknown"))
+            units = instrument.get(
+                "units", self.canonical_system.get("units", "unknown")
+            )
             calibration_points = instrument.get("calibration_points", [])
             matrix = self._fit_affine_matrix(calibration_points)
             inverse_matrix = np.linalg.inv(matrix)
@@ -116,9 +122,13 @@ class CoordinateTransformer:
         return cls(config)
 
     @staticmethod
-    def _fit_affine_matrix(calibration_points: Sequence[dict[str, Sequence[float]]]) -> np.ndarray:
+    def _fit_affine_matrix(
+        calibration_points: Sequence[dict[str, Sequence[float]]],
+    ) -> np.ndarray:
         if len(calibration_points) < 3:
-            raise ValueError("At least three calibration points are required for an affine transform")
+            raise ValueError(
+                "At least three calibration points are required for an affine transform"
+            )
 
         A_rows = []
         b_rows = []
@@ -157,18 +167,28 @@ class CoordinateTransformer:
             return self._transforms[instrument_name]
         except KeyError as exc:
             available = ", ".join(self.instruments())
-            raise KeyError(f"Unknown instrument '{instrument_name}'. Available instruments: {available}") from exc
+            raise KeyError(
+                f"Unknown instrument '{instrument_name}'. Available instruments: {available}"
+            ) from exc
 
-    def transform(self, instrument_name: str, x: float, y: float) -> tuple[float, float]:
+    def transform(
+        self, instrument_name: str, x: float, y: float
+    ) -> tuple[float, float]:
         return self.get_transform(instrument_name).transform_point(x, y)
 
-    def inverse_transform(self, instrument_name: str, x: float, y: float) -> tuple[float, float]:
+    def inverse_transform(
+        self, instrument_name: str, x: float, y: float
+    ) -> tuple[float, float]:
         return self.get_transform(instrument_name).inverse_transform_point(x, y)
 
-    def transform_points(self, instrument_name: str, points: Iterable[ArrayLike2D]) -> np.ndarray:
+    def transform_points(
+        self, instrument_name: str, points: Iterable[ArrayLike2D]
+    ) -> np.ndarray:
         return self.get_transform(instrument_name).transform_points(points)
 
-    def inverse_transform_points(self, instrument_name: str, points: Iterable[ArrayLike2D]) -> np.ndarray:
+    def inverse_transform_points(
+        self, instrument_name: str, points: Iterable[ArrayLike2D]
+    ) -> np.ndarray:
         return self.get_transform(instrument_name).inverse_transform_points(points)
 
     def validate(self) -> dict[str, float]:
@@ -192,7 +212,9 @@ class CoordinateTransformer:
 
 
 def _build_cli() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Transform instrument coordinates into sample coordinates")
+    parser = argparse.ArgumentParser(
+        description="Transform instrument coordinates into sample coordinates"
+    )
     parser.add_argument("config", type=Path, help="Path to the YAML configuration file")
     parser.add_argument("instrument", help="Instrument name, for example MAXIMA")
     parser.add_argument("x", type=float, help="Instrument x coordinate")
@@ -217,10 +239,14 @@ def main() -> None:
     transformer = CoordinateTransformer.from_yaml(args.config)
     if args.inverse:
         x_out, y_out = transformer.inverse_transform(args.instrument, args.x, args.y)
-        print(f"sample ({args.x:.6f}, {args.y:.6f}) -> {args.instrument} ({x_out:.6f}, {y_out:.6f})")
+        print(
+            f"sample ({args.x:.6f}, {args.y:.6f}) -> {args.instrument} ({x_out:.6f}, {y_out:.6f})"
+        )
     else:
         x_out, y_out = transformer.transform(args.instrument, args.x, args.y)
-        print(f"{args.instrument} ({args.x:.6f}, {args.y:.6f}) -> sample ({x_out:.6f}, {y_out:.6f})")
+        print(
+            f"{args.instrument} ({args.x:.6f}, {args.y:.6f}) -> sample ({x_out:.6f}, {y_out:.6f})"
+        )
 
     if args.show_matrix:
         matrix = transformer.get_transform(args.instrument).matrix
