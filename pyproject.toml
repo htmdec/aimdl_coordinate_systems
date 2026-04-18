@@ -2,7 +2,7 @@
 name = "coordinate-transformer"
 dynamic = ["version"]
 description = "Config-driven affine coordinate transforms for lab instruments"
-requires-python = ">=3.9"
+requires-python = ">=3.10"       # was ">=3.9"
 license = {text = "MIT"}
 dependencies = [
   "numpy>=1.26",
