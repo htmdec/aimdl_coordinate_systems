@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Union
 
@@ -65,6 +66,42 @@ class InstrumentTransform:
         return float(np.max(np.linalg.norm(residuals, axis=1)))
 
 
+@dataclass(frozen=True)
+class VersionedInstrumentTransform:
+    """An InstrumentTransform with a temporal validity range.
+
+    Validity uses half-open intervals: valid_from is inclusive,
+    valid_until is exclusive. None means unbounded in that direction.
+    """
+
+    version: str
+    valid_from: datetime | None   # None = beginning of time (inclusive)
+    valid_until: datetime | None  # None = still current (exclusive)
+    transform: InstrumentTransform
+
+    def is_valid_at(self, timestamp: datetime) -> bool:
+        """Check whether this version is in effect at the given timestamp.
+
+        Parameters
+        ----------
+        timestamp : datetime
+            Must be timezone-aware. Raises ValueError if naive.
+
+        Returns
+        -------
+        bool
+        """
+        if timestamp.tzinfo is None:
+            raise ValueError(
+                "timestamp must be timezone-aware; got naive datetime "
+                f"{timestamp.isoformat()!r}. Use e.g. "
+                "datetime.now(timezone.utc) or attach a tzinfo."
+            )
+        if self.valid_from is not None and timestamp < self.valid_from:
+            return False
+        return not (self.valid_until is not None and timestamp >= self.valid_until)
+
+
 class CoordinateTransformer:
     """Load per-instrument affine transforms from YAML and map points into sample coordinates.
 
@@ -78,7 +115,7 @@ class CoordinateTransformer:
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.canonical_system = config.get("canonical_system", {})
-        self._transforms: dict[str, InstrumentTransform] = {}
+        self._transforms: dict[str, list[VersionedInstrumentTransform]] = {}
 
         instruments = config.get("instruments", [])
         if not instruments:
@@ -89,30 +126,61 @@ class CoordinateTransformer:
             units = instrument.get(
                 "units", self.canonical_system.get("units", "unknown")
             )
-            calibration_points = instrument.get("calibration_points", [])
-            matrix = self._fit_affine_matrix(calibration_points)
-            inverse_matrix = np.linalg.inv(matrix)
-            cond = np.linalg.cond(matrix[:2, :2])
-            if cond > 1e10:
-                raise ValueError(
-                    f"Calibration for '{name}' produces a near-singular affine matrix "
-                    f"(condition number: {cond:.2e}). Check that calibration points are "
-                    f"not nearly collinear."
+
+            if "versions" in instrument:
+                raw_versions = instrument["versions"]
+            else:
+                raw_versions = [
+                    {
+                        "version": "v1",
+                        "valid_from": None,
+                        "valid_until": None,
+                        "calibration_points": instrument.get("calibration_points", []),
+                    }
+                ]
+
+            version_list: list[VersionedInstrumentTransform] = []
+            for raw_v in raw_versions:
+                version_label = raw_v["version"]
+                valid_from = self._parse_timestamp(raw_v.get("valid_from"))
+                valid_until = self._parse_timestamp(raw_v.get("valid_until"))
+                calibration_points = raw_v.get("calibration_points", [])
+                matrix = self._fit_affine_matrix(calibration_points)
+                inverse_matrix = np.linalg.inv(matrix)
+                cond = np.linalg.cond(matrix[:2, :2])
+                if cond > 1e10:
+                    raise ValueError(
+                        f"Calibration for '{name}/{version_label}' produces a near-singular affine matrix "
+                        f"(condition number: {cond:.2e}). Check that calibration points are "
+                        f"not nearly collinear."
+                    )
+                stored_points = tuple(
+                    {
+                        "instrument": tuple(map(float, point["instrument"])),
+                        "sample": tuple(map(float, point["sample"])),
+                    }
+                    for point in calibration_points
                 )
-            stored_points = tuple(
-                {
-                    "instrument": tuple(map(float, point["instrument"])),
-                    "sample": tuple(map(float, point["sample"])),
-                }
-                for point in calibration_points
+                it = InstrumentTransform(
+                    name=f"{name}/{version_label}",
+                    units=units,
+                    matrix=matrix,
+                    inverse_matrix=inverse_matrix,
+                    calibration_points=stored_points,
+                )
+                version_list.append(
+                    VersionedInstrumentTransform(
+                        version=version_label,
+                        valid_from=valid_from,
+                        valid_until=valid_until,
+                        transform=it,
+                    )
+                )
+
+            version_list.sort(
+                key=lambda v: v.valid_from if v.valid_from is not None else datetime.min.replace(tzinfo=timezone.utc)
             )
-            self._transforms[name] = InstrumentTransform(
-                name=name,
-                units=units,
-                matrix=matrix,
-                inverse_matrix=inverse_matrix,
-                calibration_points=stored_points,
-            )
+            self._transforms[name] = version_list
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> CoordinateTransformer:
@@ -120,6 +188,24 @@ class CoordinateTransformer:
         with path.open("r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         return cls(config)
+
+    @staticmethod
+    def _parse_timestamp(value: str | None) -> datetime | None:
+        """Parse an ISO 8601 timestamp string into a timezone-aware datetime.
+
+        Returns None if value is None (representing unbounded).
+        Raises ValueError if the parsed datetime is naive (no timezone).
+        """
+        if value is None:
+            return None
+        dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+        if dt.tzinfo is None:
+            raise ValueError(
+                f"Timestamp {value!r} in YAML must include a timezone "
+                f"(e.g., '2026-06-15T00:00:00Z' or "
+                f"'2026-06-15T00:00:00-04:00')"
+            )
+        return dt
 
     @staticmethod
     def _fit_affine_matrix(
@@ -162,52 +248,152 @@ class CoordinateTransformer:
     def instruments(self) -> list[str]:
         return sorted(self._transforms)
 
-    def get_transform(self, instrument_name: str) -> InstrumentTransform:
+    def _resolve_version(
+        self, instrument_name: str, timestamp: datetime | None = None
+    ) -> InstrumentTransform:
+        """Select the correct transform version for an instrument.
+
+        Parameters
+        ----------
+        instrument_name : str
+            Instrument name (e.g., "MAXIMA").
+        timestamp : datetime or None
+            Timezone-aware datetime of the data file. If None, returns the
+            current version (the one with valid_until=None). This is the
+            guardrail for callers that cannot determine a file timestamp.
+
+        Returns
+        -------
+        InstrumentTransform
+
+        Raises
+        ------
+        KeyError
+            If instrument_name is not found.
+        ValueError
+            If timestamp is naive, or if no version matches, or if multiple
+            versions match (overlapping ranges — a YAML authoring error).
+        """
         try:
-            return self._transforms[instrument_name]
+            versions = self._transforms[instrument_name]
         except KeyError as exc:
             available = ", ".join(self.instruments())
             raise KeyError(
-                f"Unknown instrument '{instrument_name}'. Available instruments: {available}"
+                f"Unknown instrument '{instrument_name}'. "
+                f"Available instruments: {available}"
             ) from exc
 
+        if timestamp is None:
+            # Return the current version (valid_until is None)
+            current = [v for v in versions if v.valid_until is None]
+            if len(current) == 1:
+                return current[0].transform
+            if len(current) == 0:
+                # All versions have ended — return the most recent
+                return versions[-1].transform
+            # Multiple open-ended versions — YAML authoring error
+            raise ValueError(
+                f"Multiple open-ended versions for '{instrument_name}'. "
+                f"Only one version should have valid_until: null."
+            )
+
+        # timestamp is not None — validate and find the matching version
+        if timestamp.tzinfo is None:
+            raise ValueError(
+                "timestamp must be timezone-aware; got naive datetime "
+                f"{timestamp.isoformat()!r}. Use e.g. "
+                "datetime.now(timezone.utc) or attach a tzinfo."
+            )
+
+        matches = [v for v in versions if v.is_valid_at(timestamp)]
+        if len(matches) == 1:
+            return matches[0].transform
+        if len(matches) == 0:
+            ranges = "; ".join(
+                f"{v.version}: "
+                f"{v.valid_from.isoformat() if v.valid_from else 'null'}"
+                f" → "
+                f"{v.valid_until.isoformat() if v.valid_until else 'null'}"
+                for v in versions
+            )
+            raise ValueError(
+                f"No valid coordinate version for '{instrument_name}' at "
+                f"{timestamp.isoformat()}. Available versions: {ranges}"
+            )
+        raise ValueError(
+            f"Overlapping validity ranges for '{instrument_name}' at "
+            f"{timestamp.isoformat()}: versions "
+            f"{', '.join(m.version for m in matches)}"
+        )
+
+    def get_transform(
+        self, instrument_name: str, timestamp: datetime | None = None
+    ) -> InstrumentTransform:
+        return self._resolve_version(instrument_name, timestamp)
+
     def transform(
-        self, instrument_name: str, x: float, y: float
+        self, instrument_name: str, x: float, y: float,
+        timestamp: datetime | None = None,
     ) -> tuple[float, float]:
-        return self.get_transform(instrument_name).transform_point(x, y)
+        return self.get_transform(instrument_name, timestamp).transform_point(x, y)
 
     def inverse_transform(
-        self, instrument_name: str, x: float, y: float
+        self, instrument_name: str, x: float, y: float,
+        timestamp: datetime | None = None,
     ) -> tuple[float, float]:
-        return self.get_transform(instrument_name).inverse_transform_point(x, y)
+        return self.get_transform(instrument_name, timestamp).inverse_transform_point(x, y)
 
     def transform_points(
-        self, instrument_name: str, points: Iterable[ArrayLike2D]
+        self, instrument_name: str, points: Iterable[ArrayLike2D],
+        timestamp: datetime | None = None,
     ) -> np.ndarray:
-        return self.get_transform(instrument_name).transform_points(points)
+        return self.get_transform(instrument_name, timestamp).transform_points(points)
 
     def inverse_transform_points(
-        self, instrument_name: str, points: Iterable[ArrayLike2D]
+        self, instrument_name: str, points: Iterable[ArrayLike2D],
+        timestamp: datetime | None = None,
     ) -> np.ndarray:
-        return self.get_transform(instrument_name).inverse_transform_points(points)
+        return self.get_transform(instrument_name, timestamp).inverse_transform_points(points)
 
     def validate(self) -> dict[str, float]:
-        return {
-            name: transform.max_calibration_error()
-            for name, transform in sorted(self._transforms.items())
-        }
+        result = {}
+        for name, versions in sorted(self._transforms.items()):
+            for v in versions:
+                key = f"{name}/{v.version}" if len(versions) > 1 else name
+                result[key] = v.transform.max_calibration_error()
+        return result
 
     def summary(self) -> dict[str, Any]:
+        instruments_summary = {}
+        for name, versions in sorted(self._transforms.items()):
+            if len(versions) == 1:
+                v = versions[0]
+                instruments_summary[name] = {
+                    "units": v.transform.units,
+                    "matrix": v.transform.matrix.tolist(),
+                    "max_calibration_error": v.transform.max_calibration_error(),
+                }
+            else:
+                instruments_summary[name] = {
+                    "versions": [
+                        {
+                            "version": v.version,
+                            "valid_from": (
+                                v.valid_from.isoformat() if v.valid_from else None
+                            ),
+                            "valid_until": (
+                                v.valid_until.isoformat() if v.valid_until else None
+                            ),
+                            "units": v.transform.units,
+                            "matrix": v.transform.matrix.tolist(),
+                            "max_calibration_error": v.transform.max_calibration_error(),
+                        }
+                        for v in versions
+                    ]
+                }
         return {
             "canonical_system": self.canonical_system,
-            "instruments": {
-                name: {
-                    "units": transform.units,
-                    "matrix": transform.matrix.tolist(),
-                    "max_calibration_error": transform.max_calibration_error(),
-                }
-                for name, transform in sorted(self._transforms.items())
-            },
+            "instruments": instruments_summary,
         }
 
 
