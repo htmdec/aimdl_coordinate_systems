@@ -9,30 +9,42 @@ canonical_system:
 instruments:
   - name: MAXIMA
     units: mm
-    calibration_points:
-      - instrument: [-14, -20]
-        sample: [0, 0]
-      - instrument: [26, -20]
-        sample: [40, 0]
-      - instrument: [-14, 20]
-        sample: [0, 40]
+    versions:
+      - version: "v1"
+        valid_from: null
+        valid_until: null
+        calibration_points:
+          - instrument: [-14, -20]
+            sample: [0, 0]
+          - instrument: [26, -20]
+            sample: [40, 0]
+          - instrument: [-14, 20]
+            sample: [0, 40]
 
   - name: HELIX
     units: mm
-    calibration_points:
-      - instrument: [8, 8]
-        sample: [32, 8]
-      - instrument: [32, 32]
-        sample: [8, 32]
-      - instrument: [32, 8]
-        sample: [8, 8]
+    versions:
+      - version: "v1"
+        valid_from: null
+        valid_until: null
+        calibration_points:
+          - instrument: [8, 8]
+            sample: [32, 8]
+          - instrument: [32, 32]
+            sample: [8, 32]
+          - instrument: [32, 8]
+            sample: [8, 8]
 
   - name: SPHINX
     units: mm
-    calibration_points:
-      - instrument: [125.319, 148.213]
-        sample: [0, 0]
-      - instrument: [124.924, 107.753]
-        sample: [0, 40]
-      - instrument: [165.189, 107.350]
-        sample: [40, 40]        
+    versions:
+      - version: "v1"
+        valid_from: null
+        valid_until: null
+        calibration_points:
+          - instrument: [125.319, 148.213]
+            sample: [0, 0]
+          - instrument: [124.924, 107.753]
+            sample: [0, 40]
+          - instrument: [165.189, 107.350]
+            sample: [40, 40]
