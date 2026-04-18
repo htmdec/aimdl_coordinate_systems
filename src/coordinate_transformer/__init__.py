@@ -4,12 +4,12 @@ import argparse
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import numpy as np
 import yaml
 
-ArrayLike2D = Sequence[float] | np.ndarray
+ArrayLike2D = Union[Sequence[float], np.ndarray]
 
 
 @dataclass(frozen=True)
