@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from subprocess import run as subprocess_run
 
 import pytest
+import yaml
 
 from coordinate_transformer import CoordinateTransformer
 
@@ -144,6 +146,39 @@ ALL_EXPIRED_CONFIG = {
                     "version": "v2",
                     "valid_from": "2025-01-01T00:00:00+00:00",
                     "valid_until": "2026-01-01T00:00:00+00:00",
+                    "calibration_points": [
+                        {"instrument": [0, 0], "sample": [20, 30]},
+                        {"instrument": [1, 0], "sample": [21, 30]},
+                        {"instrument": [0, 1], "sample": [20, 31]},
+                    ],
+                },
+            ],
+        },
+    ],
+}
+
+
+MULTI_OPEN_CONFIG = {
+    "canonical_system": {"units": "mm"},
+    "instruments": [
+        {
+            "name": "DUPES",
+            "units": "mm",
+            "versions": [
+                {
+                    "version": "v1",
+                    "valid_from": None,
+                    "valid_until": None,
+                    "calibration_points": [
+                        {"instrument": [0, 0], "sample": [10, 20]},
+                        {"instrument": [1, 0], "sample": [11, 20]},
+                        {"instrument": [0, 1], "sample": [10, 21]},
+                    ],
+                },
+                {
+                    "version": "v2",
+                    "valid_from": "2026-06-15T00:00:00+00:00",
+                    "valid_until": None,
                     "calibration_points": [
                         {"instrument": [0, 0], "sample": [20, 30]},
                         {"instrument": [1, 0], "sample": [21, 30]},
@@ -403,3 +438,131 @@ class TestYAMLTimezoneEnforcement:
         }
         with pytest.raises(ValueError, match="timezone"):
             CoordinateTransformer(bad_config)
+
+
+# ---------------------------------------------------------------------------
+# TestListVersions
+# ---------------------------------------------------------------------------
+
+class TestListVersions:
+    def test_list_versions_multi(self, versioned_transformer):
+        versions = versioned_transformer.list_versions("RECAL")
+        assert len(versions) == 2
+        labels = [v["version"] for v in versions]
+        assert labels == ["v1", "v2"]
+        assert versions[0]["valid_from"] is None
+        assert versions[0]["valid_until"] == "2026-06-15T00:00:00+00:00"
+        assert versions[1]["valid_from"] == "2026-06-15T00:00:00+00:00"
+        assert versions[1]["valid_until"] is None
+
+    def test_list_versions_single(self, versioned_transformer):
+        versions = versioned_transformer.list_versions("STABLE")
+        assert len(versions) == 1
+
+    def test_list_versions_unknown_raises(self, versioned_transformer):
+        with pytest.raises(KeyError):
+            versioned_transformer.list_versions("NOPE")
+
+
+# ---------------------------------------------------------------------------
+# TestValidateVersionContinuity
+# ---------------------------------------------------------------------------
+
+class TestValidateVersionContinuity:
+    def test_clean_continuity(self, versioned_transformer):
+        warnings = versioned_transformer.validate_version_continuity("RECAL")
+        assert warnings == []
+
+    def test_gap_detected(self):
+        t = CoordinateTransformer(GAP_CONFIG)
+        warnings = t.validate_version_continuity("GAPPY")
+        assert any("Gap" in w for w in warnings)
+
+    def test_overlap_detected(self):
+        t = CoordinateTransformer(OVERLAP_CONFIG)
+        warnings = t.validate_version_continuity("OVERLAPPY")
+        assert any("Overlap" in w for w in warnings)
+
+    def test_multiple_open_ended_detected(self):
+        t = CoordinateTransformer(MULTI_OPEN_CONFIG)
+        warnings = t.validate_version_continuity("DUPES")
+        assert any("Multiple open-ended" in w for w in warnings)
+
+    def test_all_expired_warning(self):
+        t = CoordinateTransformer(ALL_EXPIRED_CONFIG)
+        warnings = t.validate_version_continuity("RETIRED")
+        assert any("No current version" in w for w in warnings)
+
+    def test_single_version_clean(self, versioned_transformer):
+        warnings = versioned_transformer.validate_version_continuity("STABLE")
+        assert warnings == []
+
+
+# ---------------------------------------------------------------------------
+# TestCLI
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def versioned_yaml_path(tmp_path):
+    path = tmp_path / "versioned.yaml"
+    with path.open("w", encoding="utf-8") as f:
+        yaml.dump(VERSIONED_CONFIG, f)
+    return path
+
+
+class TestCLI:
+    def test_cli_forward_default_version(self, versioned_yaml_path):
+        result = subprocess_run(
+            ["python", "-m", "coordinate_transformer",
+             str(versioned_yaml_path), "RECAL", "0", "0"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "20.000000" in result.stdout
+
+    def test_cli_with_timestamp_v1(self, versioned_yaml_path):
+        result = subprocess_run(
+            ["python", "-m", "coordinate_transformer",
+             str(versioned_yaml_path), "RECAL", "0", "0",
+             "--timestamp", "2026-01-01T00:00:00+00:00"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "10.000000" in result.stdout
+
+    def test_cli_with_timestamp_v2(self, versioned_yaml_path):
+        result = subprocess_run(
+            ["python", "-m", "coordinate_transformer",
+             str(versioned_yaml_path), "RECAL", "0", "0",
+             "--timestamp", "2026-07-01T00:00:00+00:00"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "20.000000" in result.stdout
+
+    def test_cli_list_versions(self, versioned_yaml_path):
+        result = subprocess_run(
+            ["python", "-m", "coordinate_transformer",
+             str(versioned_yaml_path), "RECAL", "--list-versions"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "v1" in result.stdout
+        assert "v2" in result.stdout
+        assert "(current)" in result.stdout
+
+    def test_cli_naive_timestamp_error(self, versioned_yaml_path):
+        result = subprocess_run(
+            ["python", "-m", "coordinate_transformer",
+             str(versioned_yaml_path), "RECAL", "0", "0",
+             "--timestamp", "2026-01-01T00:00:00"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        combined = result.stdout + result.stderr
+        assert "timezone" in combined

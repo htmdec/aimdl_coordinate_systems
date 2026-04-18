@@ -355,6 +355,125 @@ class CoordinateTransformer:
     ) -> np.ndarray:
         return self.get_transform(instrument_name, timestamp).inverse_transform_points(points)
 
+    def list_versions(self, instrument_name: str) -> list[dict[str, Any]]:
+        """Return metadata about all versions of an instrument's transform.
+
+        Parameters
+        ----------
+        instrument_name : str
+            Instrument name (e.g., "MAXIMA").
+
+        Returns
+        -------
+        list of dict
+            Each dict contains: version, valid_from (ISO string or None),
+            valid_until (ISO string or None), calibration_points (count),
+            max_calibration_error (float).
+
+        Raises
+        ------
+        KeyError
+            If instrument_name is not found.
+        """
+        try:
+            versions = self._transforms[instrument_name]
+        except KeyError as exc:
+            available = ", ".join(self.instruments())
+            raise KeyError(
+                f"Unknown instrument '{instrument_name}'. "
+                f"Available instruments: {available}"
+            ) from exc
+        return [
+            {
+                "version": v.version,
+                "valid_from": v.valid_from.isoformat() if v.valid_from else None,
+                "valid_until": v.valid_until.isoformat() if v.valid_until else None,
+                "calibration_points": len(v.transform.calibration_points),
+                "max_calibration_error": v.transform.max_calibration_error(),
+            }
+            for v in versions
+        ]
+
+    def validate_version_continuity(self, instrument_name: str) -> list[str]:
+        """Check for gaps, overlaps, or other issues in version ranges.
+
+        Returns a list of warning strings. Empty list means the versions
+        are cleanly contiguous.
+
+        Parameters
+        ----------
+        instrument_name : str
+            Instrument name (e.g., "MAXIMA").
+
+        Returns
+        -------
+        list of str
+            Warning messages. Empty if no issues found.
+
+        Raises
+        ------
+        KeyError
+            If instrument_name is not found.
+        """
+        try:
+            versions = self._transforms[instrument_name]
+        except KeyError as exc:
+            raise KeyError(f"Unknown instrument '{instrument_name}'") from exc
+
+        warnings: list[str] = []
+
+        open_ended = [v for v in versions if v.valid_until is None]
+        if len(open_ended) > 1:
+            labels = ", ".join(v.version for v in open_ended)
+            warnings.append(
+                f"Multiple open-ended versions: {labels}. "
+                f"Only one should have valid_until: null."
+            )
+        if len(open_ended) == 0 and len(versions) > 0:
+            warnings.append(
+                "No current version (all versions have valid_until set). "
+                "Callers without a timestamp will get the most recent "
+                "expired version."
+            )
+
+        for i in range(len(versions) - 1):
+            current = versions[i]
+            nxt = versions[i + 1]
+            if current.valid_until is None:
+                if nxt.valid_from is not None:
+                    warnings.append(
+                        f"Version '{current.version}' has no end date "
+                        f"but is followed by '{nxt.version}' starting "
+                        f"{nxt.valid_from.isoformat()}."
+                    )
+                continue
+            if nxt.valid_from is None:
+                warnings.append(
+                    f"Version '{nxt.version}' has no start date but "
+                    f"follows '{current.version}' ending "
+                    f"{current.valid_until.isoformat()}."
+                )
+                continue
+            if current.valid_until < nxt.valid_from:
+                gap = nxt.valid_from - current.valid_until
+                warnings.append(
+                    f"Gap of {gap} between '{current.version}' "
+                    f"(ends {current.valid_until.isoformat()}) and "
+                    f"'{nxt.version}' "
+                    f"(starts {nxt.valid_from.isoformat()})."
+                )
+            elif current.valid_until > nxt.valid_from:
+                overlap = current.valid_until - nxt.valid_from
+                warnings.append(
+                    f"Overlap of {overlap} between "
+                    f"'{current.version}' "
+                    f"(ends {current.valid_until.isoformat()}) and "
+                    f"'{nxt.version}' "
+                    f"(starts {nxt.valid_from.isoformat()})."
+                )
+
+        return warnings
+
     def validate(self) -> dict[str, float]:
         result = {}
         for name, versions in sorted(self._transforms.items()):
@@ -403,8 +522,10 @@ def _build_cli() -> argparse.ArgumentParser:
     )
     parser.add_argument("config", type=Path, help="Path to the YAML configuration file")
     parser.add_argument("instrument", help="Instrument name, for example MAXIMA")
-    parser.add_argument("x", type=float, help="Instrument x coordinate")
-    parser.add_argument("y", type=float, help="Instrument y coordinate")
+    parser.add_argument("x", type=float, nargs="?", default=0.0,
+                        help="Instrument x coordinate")
+    parser.add_argument("y", type=float, nargs="?", default=0.0,
+                        help="Instrument y coordinate")
     parser.add_argument(
         "--inverse",
         action="store_true",
@@ -415,6 +536,21 @@ def _build_cli() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the affine matrix for the selected instrument",
     )
+    parser.add_argument(
+        "--timestamp",
+        type=str,
+        default=None,
+        help=(
+            "ISO 8601 timestamp for version selection "
+            "(e.g., '2026-01-15T12:00:00Z'). "
+            "If omitted, uses the current coordinate version."
+        ),
+    )
+    parser.add_argument(
+        "--list-versions",
+        action="store_true",
+        help="List all coordinate versions for the given instrument and exit.",
+    )
     return parser
 
 
@@ -423,19 +559,62 @@ def main() -> None:
     args = parser.parse_args()
 
     transformer = CoordinateTransformer.from_yaml(args.config)
+
+    if args.list_versions:
+        versions = transformer.list_versions(args.instrument)
+        for v in versions:
+            current = " (current)" if v["valid_until"] is None else ""
+            print(
+                f"  {args.instrument} {v['version']}: "
+                f"{v['valid_from'] or 'null'} → "
+                f"{v['valid_until'] or 'null'}"
+                f"  ({v['calibration_points']} cal points, "
+                f"error={v['max_calibration_error']:.2e})"
+                f"{current}"
+            )
+        return
+
+    ts = None
+    if args.timestamp:
+        ts_str = args.timestamp
+        if ts_str.endswith("Z"):
+            ts_str = ts_str[:-1] + "+00:00"
+        try:
+            ts = datetime.fromisoformat(ts_str)
+        except ValueError:
+            print(
+                "Error: --timestamp must be an ISO 8601 string with "
+                "timezone (e.g., 2026-01-15T12:00:00Z)"
+            )
+            raise SystemExit(1) from None
+        if ts.tzinfo is None:
+            print(
+                "Error: --timestamp must include timezone "
+                "(e.g., 2026-01-15T12:00:00Z)"
+            )
+            raise SystemExit(1)
+
     if args.inverse:
-        x_out, y_out = transformer.inverse_transform(args.instrument, args.x, args.y)
+        x_out, y_out = transformer.inverse_transform(
+            args.instrument, args.x, args.y, timestamp=ts
+        )
         print(
-            f"sample ({args.x:.6f}, {args.y:.6f}) -> {args.instrument} ({x_out:.6f}, {y_out:.6f})"
+            f"sample ({args.x:.6f}, {args.y:.6f}) -> "
+            f"{args.instrument} ({x_out:.6f}, {y_out:.6f})"
         )
     else:
-        x_out, y_out = transformer.transform(args.instrument, args.x, args.y)
+        x_out, y_out = transformer.transform(
+            args.instrument, args.x, args.y, timestamp=ts
+        )
         print(
-            f"{args.instrument} ({args.x:.6f}, {args.y:.6f}) -> sample ({x_out:.6f}, {y_out:.6f})"
+            f"{args.instrument} ({args.x:.6f}, {args.y:.6f}) -> "
+            f"sample ({x_out:.6f}, {y_out:.6f})"
         )
 
     if args.show_matrix:
-        matrix = transformer.get_transform(args.instrument).matrix
+        matrix = transformer.get_transform(
+            args.instrument, timestamp=ts
+        ).matrix
         print("Affine matrix:")
         print(matrix)
 
