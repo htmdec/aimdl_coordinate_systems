@@ -34,10 +34,6 @@ instruments:
             sample: [8, 32]
           - instrument: [32, 8]
             sample: [8, 8]
-
-  - name: HELIX
-    units: mm
-    versions:
       - version: "v2"
         valid_from: "2026-04-01T00:00:00-04:00"
         valid_until: null
@@ -47,7 +43,8 @@ instruments:
           - instrument: [32, 32]
             sample: [32, 32]
           - instrument: [32, 8]
-            sample: [32, 8]  
+            sample: [32, 8]
+
   - name: SPHINX
     units: mm
     versions:
