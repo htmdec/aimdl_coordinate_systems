@@ -10,7 +10,7 @@ from typing import Any, Union
 import numpy as np
 import yaml
 
-ArrayLike2D = Union[Sequence[float], np.ndarray]
+ArrayLike2D = Sequence[float] | np.ndarray
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,7 @@ class VersionedInstrumentTransform:
     """
 
     version: str
-    valid_from: datetime | None   # None = beginning of time (inclusive)
+    valid_from: datetime | None  # None = beginning of time (inclusive)
     valid_until: datetime | None  # None = still current (exclusive)
     transform: InstrumentTransform
 
@@ -178,7 +178,11 @@ class CoordinateTransformer:
                 )
 
             version_list.sort(
-                key=lambda v: v.valid_from if v.valid_from is not None else datetime.min.replace(tzinfo=timezone.utc)
+                key=lambda v: (
+                    v.valid_from
+                    if v.valid_from is not None
+                    else datetime.min.replace(tzinfo=timezone.utc)
+                )
             )
             self._transforms[name] = version_list
 
@@ -198,7 +202,9 @@ class CoordinateTransformer:
         """
         if value is None:
             return None
-        dt = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+        dt = (
+            value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+        )
         if dt.tzinfo is None:
             raise ValueError(
                 f"Timestamp {value!r} in YAML must include a timezone "
@@ -332,28 +338,42 @@ class CoordinateTransformer:
         return self._resolve_version(instrument_name, timestamp)
 
     def transform(
-        self, instrument_name: str, x: float, y: float,
+        self,
+        instrument_name: str,
+        x: float,
+        y: float,
         timestamp: datetime | None = None,
     ) -> tuple[float, float]:
         return self.get_transform(instrument_name, timestamp).transform_point(x, y)
 
     def inverse_transform(
-        self, instrument_name: str, x: float, y: float,
+        self,
+        instrument_name: str,
+        x: float,
+        y: float,
         timestamp: datetime | None = None,
     ) -> tuple[float, float]:
-        return self.get_transform(instrument_name, timestamp).inverse_transform_point(x, y)
+        return self.get_transform(instrument_name, timestamp).inverse_transform_point(
+            x, y
+        )
 
     def transform_points(
-        self, instrument_name: str, points: Iterable[ArrayLike2D],
+        self,
+        instrument_name: str,
+        points: Iterable[ArrayLike2D],
         timestamp: datetime | None = None,
     ) -> np.ndarray:
         return self.get_transform(instrument_name, timestamp).transform_points(points)
 
     def inverse_transform_points(
-        self, instrument_name: str, points: Iterable[ArrayLike2D],
+        self,
+        instrument_name: str,
+        points: Iterable[ArrayLike2D],
         timestamp: datetime | None = None,
     ) -> np.ndarray:
-        return self.get_transform(instrument_name, timestamp).inverse_transform_points(points)
+        return self.get_transform(instrument_name, timestamp).inverse_transform_points(
+            points
+        )
 
     def list_versions(self, instrument_name: str) -> list[dict[str, Any]]:
         """Return metadata about all versions of an instrument's transform.
@@ -522,10 +542,12 @@ def _build_cli() -> argparse.ArgumentParser:
     )
     parser.add_argument("config", type=Path, help="Path to the YAML configuration file")
     parser.add_argument("instrument", help="Instrument name, for example MAXIMA")
-    parser.add_argument("x", type=float, nargs="?", default=0.0,
-                        help="Instrument x coordinate")
-    parser.add_argument("y", type=float, nargs="?", default=0.0,
-                        help="Instrument y coordinate")
+    parser.add_argument(
+        "x", type=float, nargs="?", default=0.0, help="Instrument x coordinate"
+    )
+    parser.add_argument(
+        "y", type=float, nargs="?", default=0.0, help="Instrument y coordinate"
+    )
     parser.add_argument(
         "--inverse",
         action="store_true",
@@ -612,9 +634,7 @@ def main() -> None:
         )
 
     if args.show_matrix:
-        matrix = transformer.get_transform(
-            args.instrument, timestamp=ts
-        ).matrix
+        matrix = transformer.get_transform(args.instrument, timestamp=ts).matrix
         print("Affine matrix:")
         print(matrix)
 
