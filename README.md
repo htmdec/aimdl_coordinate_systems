@@ -240,6 +240,97 @@ After installation, `coordinate-transformer` is also available as a standalone c
 coordinate-transformer instrument_coordinate_transforms.yaml MAXIMA -14 -20
 ```
 
+## Versioned coordinate systems
+
+Instrument stations occasionally update their coordinate systems after
+recalibration or hardware changes. The coordinate version in effect is not
+communicated in station metadata or data files, so the transformer selects
+the correct version based on the timestamp of the data file.
+
+### Versioned YAML format
+
+Each instrument carries a list of `versions`, each with a validity window.
+`valid_from: null` means "from lab inception" and `valid_until: null` means
+"still current". Timestamps are ISO 8601 with a timezone. Boundary
+semantics: `valid_from` is **inclusive** and `valid_until` is **exclusive**.
+
+```yaml
+instruments:
+  - name: MAXIMA
+    units: mm
+    versions:
+      - version: "v1"
+        valid_from: null
+        valid_until: "2026-06-15T00:00:00Z"
+        calibration_points:
+          - instrument: [-14, -20]
+            sample: [0, 0]
+          - instrument: [26, -20]
+            sample: [40, 0]
+          - instrument: [-14, 20]
+            sample: [0, 40]
+
+      - version: "v2"
+        valid_from: "2026-06-15T00:00:00Z"
+        valid_until: null
+        calibration_points:
+          - instrument: [-13.8, -19.9]
+            sample: [0, 0]
+          - instrument: [26.1, -19.9]
+            sample: [40, 0]
+          - instrument: [-13.8, 20.1]
+            sample: [0, 40]
+```
+
+The flat (pre-versioned) format is still accepted and is treated as a
+single implicit version spanning all time.
+
+### Python API
+
+```python
+from coordinate_transformer import CoordinateTransformer
+from datetime import datetime, timezone
+
+t = CoordinateTransformer.from_yaml("instrument_coordinate_transforms.yaml")
+
+# Current version (no timestamp — default for files without dates)
+x, y = t.transform("MAXIMA", -14, -20)
+
+# Historical file with known creation date
+file_date = datetime(2025, 3, 15, tzinfo=timezone.utc)
+x, y = t.transform("MAXIMA", -14, -20, timestamp=file_date)
+
+# List available versions
+for v in t.list_versions("MAXIMA"):
+    print(v)
+
+# Check for gaps or overlaps
+warnings = t.validate_version_continuity("MAXIMA")
+```
+
+### CLI
+
+```bash
+# Current version
+coordinate-transformer config.yaml MAXIMA -14 -20
+
+# With timestamp
+coordinate-transformer config.yaml MAXIMA -14 -20 --timestamp 2025-03-15T00:00:00Z
+
+# List versions
+coordinate-transformer config.yaml MAXIMA --list-versions
+```
+
+### Adding a new calibration version
+
+1. Set `valid_until` on the current version to the recalibration date
+   (ISO 8601 with timezone).
+2. Add a new version entry with `valid_from` set to the same date and
+   `valid_until: null`.
+3. Run `coordinate-transformer config.yaml <INSTRUMENT> --list-versions`
+   to verify the new version is reported as current.
+4. Run `python -m pytest tests/ -v` to confirm no regressions.
+
 ## Running the example notebook
 
 After installing the environment:
