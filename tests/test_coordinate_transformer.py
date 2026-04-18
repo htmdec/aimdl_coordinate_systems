@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from subprocess import run as subprocess_run
 
@@ -314,37 +315,114 @@ class TestSummary:
 # ---------------------------------------------------------------------------
 
 class TestRealInstruments:
-    """Tests against the actual calibration YAML shipped with the repo."""
+    """Data-driven tests against the actual calibration YAML shipped with the repo.
 
-    def test_maxima_calibration_point_roundtrip(self, real_yaml_path):
-        t = CoordinateTransformer.from_yaml(real_yaml_path)
-        # First calibration point: instrument (-14, -20) -> sample (0, 0)
-        x, y = t.transform("MAXIMA", -14.0, -20.0)
-        assert x == pytest.approx(0.0, abs=1e-10)
-        assert y == pytest.approx(0.0, abs=1e-10)
+    These tests read the YAML, iterate over every instrument and every
+    version, and verify that all calibration points produce the expected
+    sample coordinates when given a timestamp within that version's
+    validity range.
 
-    def test_sphinx_calibration_point_roundtrip(self, real_yaml_path):
-        t = CoordinateTransformer.from_yaml(real_yaml_path)
-        # Third calibration point: instrument (165.189, 107.350) -> sample (40, 40)
-        x, y = t.transform("SPHINX", 165.189, 107.350)
-        assert x == pytest.approx(40.0, abs=1e-10)
-        assert y == pytest.approx(40.0, abs=1e-10)
+    Adding a new version to the YAML requires zero test changes.
+    """
 
-    def test_helix_calibration_point_roundtrip(self, real_yaml_path):
-        t = CoordinateTransformer.from_yaml(real_yaml_path)
-        # First calibration point: instrument (8, 8) -> sample (32, 8)
-        x, y = t.transform("HELIX", 8.0, 8.0)
-        assert x == pytest.approx(32.0, abs=1e-10)
-        assert y == pytest.approx(8.0, abs=1e-10)
+    @staticmethod
+    def _timestamp_for_version(version_entry):
+        """Return a timezone-aware timestamp guaranteed to fall within
+        a version's validity range."""
+        valid_from = version_entry.get("valid_from")
+        valid_until = version_entry.get("valid_until")
 
-    @pytest.mark.parametrize("instrument", ["MAXIMA", "HELIX", "SPHINX"])
-    def test_real_roundtrip(self, real_yaml_path, instrument):
+        if valid_from is not None and isinstance(valid_from, str):
+            valid_from = datetime.fromisoformat(valid_from)
+        if valid_until is not None and isinstance(valid_until, str):
+            valid_until = datetime.fromisoformat(valid_until)
+
+        if valid_from is not None:
+            # One second after valid_from (inclusive boundary)
+            return valid_from + timedelta(seconds=1)
+        if valid_until is not None:
+            # One second before valid_until (exclusive boundary)
+            return valid_until - timedelta(seconds=1)
+        # Fully unbounded — any timestamp works
+        return datetime(2025, 6, 15, tzinfo=timezone.utc)
+
+    @staticmethod
+    def _iter_versions(raw_config):
+        """Yield (instrument_name, version_entry) for every version of
+        every instrument in a raw YAML config dict."""
+        for instrument in raw_config["instruments"]:
+            name = instrument["name"]
+            if "versions" in instrument:
+                versions = instrument["versions"]
+            else:
+                # Legacy flat format — wrap in a single version
+                versions = [{
+                    "version": "v1",
+                    "valid_from": None,
+                    "valid_until": None,
+                    "calibration_points": instrument["calibration_points"],
+                }]
+            for ver in versions:
+                yield name, ver
+
+    def test_all_calibration_points(self, real_yaml_path):
+        """Every calibration point in every version of every instrument
+        must reproduce its expected sample coordinates."""
+        with open(real_yaml_path, encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+
         t = CoordinateTransformer.from_yaml(real_yaml_path)
-        x_orig, y_orig = 20.0, 20.0
-        x_s, y_s = t.transform(instrument, x_orig, y_orig)
-        x_back, y_back = t.inverse_transform(instrument, x_s, y_s)
-        assert x_back == pytest.approx(x_orig, abs=1e-10)
-        assert y_back == pytest.approx(y_orig, abs=1e-10)
+
+        for name, ver in self._iter_versions(raw):
+            ts = self._timestamp_for_version(ver)
+            label = f"{name}/{ver['version']}"
+            for i, point in enumerate(ver["calibration_points"]):
+                ix, iy = point["instrument"]
+                sx, sy = point["sample"]
+                rx, ry = t.transform(name, float(ix), float(iy), timestamp=ts)
+                assert rx == pytest.approx(float(sx), abs=1e-10), (
+                    f"{label} cal point {i}: "
+                    f"instrument ({ix}, {iy}) -> ({rx}, {ry}), "
+                    f"expected ({sx}, {sy})"
+                )
+                assert ry == pytest.approx(float(sy), abs=1e-10), (
+                    f"{label} cal point {i}: "
+                    f"instrument ({ix}, {iy}) -> ({rx}, {ry}), "
+                    f"expected ({sx}, {sy})"
+                )
+
+    def test_all_versions_roundtrip(self, real_yaml_path):
+        """Forward then inverse recovers the original point for every
+        version of every instrument."""
+        with open(real_yaml_path, encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+
+        t = CoordinateTransformer.from_yaml(real_yaml_path)
+
+        for name, ver in self._iter_versions(raw):
+            ts = self._timestamp_for_version(ver)
+            label = f"{name}/{ver['version']}"
+            x_orig, y_orig = 20.0, 20.0
+            x_s, y_s = t.transform(name, x_orig, y_orig, timestamp=ts)
+            x_back, y_back = t.inverse_transform(
+                name, x_s, y_s, timestamp=ts
+            )
+            assert x_back == pytest.approx(x_orig, abs=1e-10), (
+                f"{label} roundtrip failed at ({x_orig}, {y_orig})"
+            )
+            assert y_back == pytest.approx(y_orig, abs=1e-10), (
+                f"{label} roundtrip failed at ({x_orig}, {y_orig})"
+            )
+
+    def test_all_versions_calibration_error(self, real_yaml_path):
+        """Every version of every instrument must have near-zero
+        calibration error (the affine fit is exact or near-exact)."""
+        t = CoordinateTransformer.from_yaml(real_yaml_path)
+        errors = t.validate()
+        for key, err in errors.items():
+            assert err < 1e-10, (
+                f"{key} calibration error {err} exceeds tolerance"
+            )
 
 
 # ---------------------------------------------------------------------------
